@@ -1,32 +1,25 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+const SUPABASE_URL = "https://cpqqcydlwdiciumefzzk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwcXFjeWRsd2RpY2l1bWVmenprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2MzMwNzEsImV4cCI6MjA5MTIwOTA3MX0.C1M83kBzeA6YnSXhAffMLsO8VdMIBjR03vgjSYl8D3I";
 
 const TASKS = [
   { id: 1, title: "Deploy WFC retention site", priority: "high", status: "pending", category: "Tech", by: "Felix" },
-  { id: 2, title: "Lock in brand name (RetainIQ vs WFC-branded)", priority: "high", status: "pending", category: "Brand", by: "Felix" },
+  { id: 2, title: "Lock in brand name (RetainIQ vs WFC-branded)", priority: "high", status: "pending", category: "Brand", by: "Hans" },
   { id: 3, title: "Set up GHL agency account", priority: "high", status: "pending", category: "Operations", by: "Hans" },
   { id: 4, title: "Register domain for retention site", priority: "high", status: "pending", category: "Tech", by: "Hans" },
   { id: 5, title: "Build restaurant prospect list (200km from J0K 1S0)", priority: "medium", status: "pending", category: "Sales", by: "Felix" },
-  { id: 6, title: "Set up email outreach infrastructure (domains + warm-up)", priority: "medium", status: "pending", category: "Sales", by: "Felix" },
-  { id: 7, title: "Configure Twilio number for EternalLine AI agent", priority: "low", status: "pending", category: "EternalLine", by: "Hans" },
-  { id: 8, title: "Create onboarding call script for new clients", priority: "medium", status: "pending", category: "Sales", by: "Felix" },
+  { id: 6, title: "Set up email outreach infrastructure", priority: "medium", status: "pending", category: "Sales", by: "Felix" },
+  { id: 7, title: "Configure Twilio for EternalLine AI", priority: "low", status: "pending", category: "EternalLine", by: "Hans" },
+  { id: 8, title: "Create onboarding call script", priority: "medium", status: "pending", category: "Sales", by: "Felix" },
 ];
 
 const PRODUCTS = [
   {
-    name: "Customer Retention System",
-    tag: "Core Product",
-    color: "emerald",
-    price: "$2,000 setup + $449/mo",
+    name: "Customer Retention System", tag: "Core Product", price: "$2,000 setup + $449/mo",
     description: "QR code → customer opts in → SMS database → automated follow-up",
-    includes: [
-      "Custom QR code + branded stickers shipped",
-      "Client-owned customer database",
-      "SMS campaign dashboard (5,000 SMS/mo)",
-      "Automated review funnel (5★→Google, 1-3★→private)",
-      "3-message welcome sequence",
-      "60–90 min guided onboarding call",
-    ],
+    includes: ["Custom QR code + branded stickers shipped","Client-owned customer database","SMS dashboard (5,000 SMS/mo)","Automated review funnel (5★→Google, 1-3★→private)","3-message welcome sequence","60–90 min guided onboarding call"],
     guarantee: "50 contacts in 30 days or free extended support",
   },
 ];
@@ -39,30 +32,59 @@ const ADDONS = [
 ];
 
 const TEAM = [
-  { name: "Hans", role: "CEO / Co-Founder", focus: "Sales, strategy, growth" },
-  { name: "Lars", role: "CEO / Co-Founder", focus: "Sales, growth, client relations" },
-  { name: "Felix", role: "AI Operating Partner", focus: "Operations, tech, execution, proactive growth" },
+  { name: "Hans", role: "CEO / Co-Founder", focus: "Sales, strategy, growth", initial: "H" },
+  { name: "Lars", role: "CEO / Co-Founder", focus: "Sales, growth, client relations", initial: "L" },
+  { name: "Felix", role: "AI Operating Partner", focus: "Operations, tech, execution, proactive growth", initial: "⚡" },
 ];
 
-type Tab = "tasks" | "products" | "team" | "company";
+const CATEGORY_COLORS: Record<string, string> = {
+  "Company": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "Sales": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  "Market": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  "Tech": "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  "Finance": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  "General": "bg-slate-500/20 text-slate-400 border-slate-500/30",
+};
+
+type Tab = "tasks" | "brain" | "products" | "team";
+type BrainEntry = { id: string; title: string; content: string; category: string; created_at: string; };
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor(diff / 60000);
+  if (h > 23) return `${Math.floor(h/24)}d ago`;
+  if (h > 0) return `${h}h ago`;
+  return `${m}m ago`;
+}
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("tasks");
   const [tasks, setTasks] = useState(TASKS);
+  const [brain, setBrain] = useState<BrainEntry[]>([]);
+  const [brainLoading, setBrainLoading] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const approve = (id: number) => setTasks(t => t.map(x => x.id === id ? { ...x, status: "approved" } : x));
   const done = (id: number) => setTasks(t => t.map(x => x.id === id ? { ...x, status: "done" } : x));
-
   const priorityColor = (p: string) => p === "high" ? "text-red-400" : p === "medium" ? "text-yellow-400" : "text-slate-400";
-  const statusBadge = (s: string) => {
-    if (s === "approved") return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-    if (s === "done") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-    return "bg-slate-500/20 text-slate-400 border-slate-500/30";
-  };
+  const statusBadge = (s: string) => s === "approved" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : s === "done" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30";
 
   const pending = tasks.filter(t => t.status === "pending").length;
   const approved = tasks.filter(t => t.status === "approved").length;
   const done_ = tasks.filter(t => t.status === "done").length;
+
+  useEffect(() => {
+    if (tab === "brain") {
+      setBrainLoading(true);
+      fetch(`${SUPABASE_URL}/rest/v1/brain_entries?select=*&order=created_at.desc&limit=50`, {
+        headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
+      })
+        .then(r => r.json())
+        .then(data => { setBrain(Array.isArray(data) ? data : []); setBrainLoading(false); })
+        .catch(() => setBrainLoading(false));
+    }
+  }, [tab]);
 
   return (
     <div className="max-w-lg mx-auto px-4 pb-24">
@@ -70,7 +92,7 @@ export default function Home() {
       <div className="pt-12 pb-6">
         <div className="flex items-center gap-3 mb-1">
           <span className="text-2xl">⚡</span>
-          <h1 className="text-2xl font-extrabold tracking-tight">WFC Mission Control</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">WFC Command</h1>
         </div>
         <p className="text-slate-400 text-sm ml-11">Felix is running. Everything tracked.</p>
       </div>
@@ -91,13 +113,10 @@ export default function Home() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-6 border border-white/10">
-        {(["tasks", "products", "team", "company"] as Tab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all ${tab === t ? "bg-[#22C55E] text-white" : "text-slate-400 hover:text-white"}`}
-          >
-            {t}
+        {(["tasks", "brain", "products", "team"] as Tab[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all ${tab === t ? "bg-[#22C55E] text-white" : "text-slate-400 hover:text-white"}`}>
+            {t === "brain" ? "🧠 Brain" : t === "tasks" ? "⚡ Tasks" : t === "products" ? "📦 Products" : "👥 Team"}
           </button>
         ))}
       </div>
@@ -119,23 +138,48 @@ export default function Home() {
                     <span className="text-xs text-slate-500">{task.by}</span>
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full border font-semibold whitespace-nowrap ${statusBadge(task.status)}`}>
-                  {task.status}
-                </span>
+                <span className={`text-xs px-2 py-1 rounded-full border font-semibold whitespace-nowrap ${statusBadge(task.status)}`}>{task.status}</span>
               </div>
               {task.status === "pending" && (
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => approve(task.id)} className="flex-1 bg-[#22C55E]/10 border border-[#22C55E]/30 text-[#22C55E] text-xs font-bold py-1.5 rounded-lg hover:bg-[#22C55E]/20 transition-all">
-                    ✓ Approve
-                  </button>
-                  <button onClick={() => done(task.id)} className="flex-1 bg-white/5 border border-white/10 text-slate-400 text-xs font-bold py-1.5 rounded-lg hover:bg-white/10 transition-all">
-                    Mark Done
-                  </button>
+                  <button onClick={() => approve(task.id)} className="flex-1 bg-[#22C55E]/10 border border-[#22C55E]/30 text-[#22C55E] text-xs font-bold py-1.5 rounded-lg hover:bg-[#22C55E]/20 transition-all">✓ Approve</button>
+                  <button onClick={() => done(task.id)} className="flex-1 bg-white/5 border border-white/10 text-slate-400 text-xs font-bold py-1.5 rounded-lg hover:bg-white/10 transition-all">Mark Done</button>
                 </div>
               )}
               {task.status === "approved" && (
-                <button onClick={() => done(task.id)} className="w-full mt-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold py-1.5 rounded-lg hover:bg-blue-500/20 transition-all">
-                  Mark Done
+                <button onClick={() => done(task.id)} className="w-full mt-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold py-1.5 rounded-lg hover:bg-blue-500/20 transition-all">Mark Done</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Brain Tab */}
+      {tab === "brain" && (
+        <div className="space-y-3">
+          <p className="text-slate-400 text-xs mb-4">Felix's 24hr intel feed — all important info logged here automatically.</p>
+          {brainLoading && (
+            <div className="text-center py-12 text-slate-500 text-sm">Loading...</div>
+          )}
+          {!brainLoading && brain.length === 0 && (
+            <div className="text-center py-12 text-slate-500 text-sm">No entries yet. Felix will log intel here daily.</div>
+          )}
+          {!brainLoading && brain.map(entry => (
+            <div key={entry.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <h3 className="font-bold text-sm leading-snug flex-1">{entry.title}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap flex-shrink-0 ${CATEGORY_COLORS[entry.category] || CATEGORY_COLORS["General"]}`}>
+                  {entry.category}
+                </span>
+              </div>
+              <p className="text-slate-500 text-xs mb-3">{timeAgo(entry.created_at)}</p>
+              <p className={`text-slate-300 text-sm leading-relaxed ${expanded === entry.id ? "" : "line-clamp-3"}`}>
+                {entry.content}
+              </p>
+              {entry.content.length > 150 && (
+                <button onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                  className="text-[#22C55E] text-xs mt-2 font-semibold">
+                  {expanded === entry.id ? "Show less" : "Read more"}
                 </button>
               )}
             </div>
@@ -148,9 +192,7 @@ export default function Home() {
         <div className="space-y-4">
           {PRODUCTS.map(p => (
             <div key={p.name} className="bg-white/5 border border-white/10 rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">{p.tag}</span>
-              </div>
+              <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">{p.tag}</span>
               <h3 className="font-extrabold text-lg mt-2">{p.name}</h3>
               <p className="text-[#22C55E] font-bold text-sm mt-1">{p.price}</p>
               <p className="text-slate-400 text-sm mt-2 leading-relaxed">{p.description}</p>
@@ -190,9 +232,7 @@ export default function Home() {
           {TEAM.map(m => (
             <div key={m.name} className="bg-white/5 border border-white/10 rounded-xl p-5">
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-[#22C55E]/20 border border-[#22C55E]/30 flex items-center justify-center font-extrabold text-[#22C55E]">
-                  {m.name[0]}
-                </div>
+                <div className="w-10 h-10 rounded-full bg-[#22C55E]/20 border border-[#22C55E]/30 flex items-center justify-center font-extrabold text-[#22C55E]">{m.initial}</div>
                 <div>
                   <p className="font-bold">{m.name}</p>
                   <p className="text-slate-400 text-xs">{m.role}</p>
@@ -204,49 +244,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Company Tab */}
-      {tab === "company" && (
-        <div className="space-y-4">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-            <h3 className="font-extrabold text-lg mb-3">WFC Solution</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                { label: "Mission", value: "Turn local business foot traffic into a permanent customer database and keep them coming back on autopilot." },
-                { label: "Market", value: "Local businesses — restaurants, spas, salons, retail. Quebec-first, scalable." },
-                { label: "Language", value: "Bilingual FR/EN" },
-                { label: "Backend CRM", value: "GoHighLevel (agency sub-accounts)" },
-                { label: "Pricing model", value: "One-time setup + monthly recurring" },
-                { label: "Spring Blitz", value: "Setup at $2,000 until June 1. Goes to $3,500 after." },
-              ].map(item => (
-                <div key={item.label}>
-                  <p className="text-slate-500 text-xs uppercase tracking-wider">{item.label}</p>
-                  <p className="text-slate-200 mt-0.5">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-            <h3 className="font-bold mb-3">Open Blockers</h3>
-            <div className="space-y-2">
-              {[
-                "Brand name decision (RetainIQ vs WFC-branded)",
-                "GHL agency account setup",
-                "Domain registration for retention site",
-                "Twilio number for EternalLine agent",
-              ].map((b, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="text-yellow-400 mt-0.5">⚠</span>
-                  <span className="text-slate-300">{b}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0A0F1E]/95 border-t border-white/10 px-4 py-3 text-center">
-        <p className="text-slate-500 text-xs">⚡ Felix is watching. Updates sync on next heartbeat.</p>
+        <p className="text-slate-500 text-xs">⚡ Felix is watching. Brain updates every 24hrs.</p>
       </div>
     </div>
   );
